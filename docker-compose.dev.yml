@@ -1,0 +1,89 @@
+version: '3.8'
+services:
+  mysql_db:
+    networks:
+      - bridge-network
+    build:
+      context: ./mysqldb
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_USER: "eso"
+      MYSQL_PASSWORD: "eso1234"
+      MYSQL_ROOT_PASSWORD: "root"
+      MYSQL_DATABASE: "eso"
+    command: --default-authentication-plugin=mysql_native_password
+    restart: always
+    volumes:
+      - climber-mysql-data:/var/lib/mysql
+  adminer:
+    image: adminer:4-standalone
+    restart: always
+    ports:
+      - 60001:8080
+    networks:
+      - bridge-network
+    depends_on:
+      - mysql_db
+    environment:
+      ADMINER_DEFAULT_SERVER: mysql_db
+  redis:
+    networks:
+      - bridge-network
+    image: redis:7.2-alpine
+    restart: always
+    ports:
+      - "6380:6379"
+    environment:
+      REDIS_REQUIRE_PASS: eso
+    command: sh -c "redis-server --save 20 1 --loglevel warning --requirepass $$REDIS_REQUIRE_PASS"
+    volumes: 
+      - climber-redis-data:/data
+  climber_api:
+    networks:
+      - bridge-network
+    build:
+      context: ./climberAPI
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3001:3000"
+    environment:
+      PYTHON_COMMAND: "/opt/venv/bin/python3"
+      DB_ENGINE: MYSQL
+      DB_HOST: mysql_db
+      DB_USER: root
+      DB_PASSWD: root
+      DB_DATABASE: eso
+      CACHE_ENGINE: Redis
+      CACHE_HOST: redis
+      CACHE_USER: default
+      CACHE_PASSWD: eso
+    volumes:
+      - climber-api-source:/usr/src/app/src
+    depends_on:
+      - mysql_db
+      - redis
+    restart: on-failure
+  climber_web:
+    networks:
+      - bridge-network
+    build:
+      context: ./climberWeb
+    ports:
+      - "4201:80"
+    volumes:
+      - climber-videos:/usr/share/nginx/html/assets/videos
+    depends_on:
+      - climber_api
+    restart: on-failure
+networks:
+  bridge-network:
+    driver: bridge
+
+volumes:
+  climber-videos:
+    external: true
+  climber-api-source:
+    external: true
+  climber-mysql-data:
+  climber-redis-data:
